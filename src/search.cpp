@@ -81,7 +81,8 @@ static void score_moves(const Position& pos, MoveList& list, Move tt_move,
         } else if (type_of_move(m) == MT_PROMOTION && promo_type(m) == QUEEN) {
             list.moves[i].score = 900000 + mvv_lva(pos, m);
         } else if (is_capture(pos, m)) {
-            list.moves[i].score = 800000 + mvv_lva(pos, m);
+            int base = pos.see_ge(m, 0) ? 800000 : 200000;  // split good/bad captures
+            list.moves[i].score = base + mvv_lva(pos, m);
         } else if (m == ss->killer[0]) {
             list.moves[i].score = 700000;
         } else if (m == ss->killer[1]) {
@@ -128,9 +129,9 @@ static int quiescence(Position& pos, int alpha, int beta, int ply) {
     int best = stand_pat;
     for (int i = 0; i < list.size; ++i) {
         Move m = pick_next_move(list, i);
-        // Delta pruning: if even a queen capture can't raise alpha, skip.
-        // (Approximate, turned off here near the endgame to preserve tactics.)
-        if (!pos.is_legal(m)) continue;
+        // SEE pruning: skip captures that lose material. Keep promotions,
+        // which can change piece type and break SEE's simple assumption.
+        if (type_of_move(m) != MT_PROMOTION && !pos.see_ge(m, 0)) continue;
 
         pos.do_move(m);
         int score = -quiescence(pos, -beta, -alpha, ply + 1);
@@ -236,8 +237,6 @@ static int negamax(Position& pos, int depth, int alpha, int beta, int ply,
 
     for (int i = 0; i < list.size; ++i) {
         Move m = pick_next_move(list, i);
-        if (!pos.is_legal(m)) continue;
-
         bool is_cap_or_promo = is_capture(pos, m) || type_of_move(m) == MT_PROMOTION;
         moves_searched++;
 

@@ -316,7 +316,7 @@ static Move find_legal_move(const Position& pos, const std::string& uci) {
         Move c = list.moves[i].move;
         if (from_sq(c) == from_sq(m) && to_sq(c) == to_sq(m)) {
             if (type_of_move(m) == MT_PROMOTION && promo_type(c) != promo_type(m)) continue;
-            if (pos.is_legal(c)) return c;
+            return c;
         }
     }
     return MOVE_NONE;

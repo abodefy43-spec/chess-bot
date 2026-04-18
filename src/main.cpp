@@ -83,10 +83,8 @@ static bool apply_move_string(const std::string& s) {
         Move c = list.moves[i].move;
         if (from_sq(c) == from_sq(m) && to_sq(c) == to_sq(m)) {
             if (type_of_move(m) == MT_PROMOTION && promo_type(c) != promo_type(m)) continue;
-            if (g_pos.is_legal(c)) {
-                g_pos.do_move(c);
-                return true;
-            }
+            g_pos.do_move(c);
+            return true;
         }
     }
     return false;
@@ -170,7 +168,6 @@ static U64 perft(Position& pos, int depth) {
     U64 n = 0;
     for (int i = 0; i < list.size; ++i) {
         Move m = list.moves[i].move;
-        if (!pos.is_legal(m)) continue;
         pos.do_move(m);
         n += perft(pos, depth - 1);
         pos.undo_move(m);
@@ -186,7 +183,6 @@ static void cmd_perft(std::istringstream& iss) {
     U64 total = 0;
     for (int i = 0; i < list.size; ++i) {
         Move m = list.moves[i].move;
-        if (!g_pos.is_legal(m)) continue;
         g_pos.do_move(m);
         U64 n = (d > 1) ? perft(g_pos, d - 1) : 1;
         g_pos.undo_move(m);

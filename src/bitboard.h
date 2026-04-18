@@ -43,6 +43,12 @@ void init();
 extern Bitboard PawnAttacks[2][64];
 extern Bitboard KnightAttacks[64];
 extern Bitboard KingAttacks[64];
+// BetweenBB[a][b] = squares strictly between a and b on a rank/file/diagonal,
+// or 0 if they are not aligned. Used for check interposition & pin checks.
+extern Bitboard BetweenBB[64][64];
+// LineBB[a][b] = the entire rank/file/diagonal containing a and b (including
+// a and b themselves), or 0 if not aligned. Used for pinned-piece movement.
+extern Bitboard LineBB[64][64];
 
 Bitboard bishop_attacks(Square s, Bitboard occ);
 Bitboard rook_attacks(Square s, Bitboard occ);

@@ -48,6 +48,13 @@ public:
     Bitboard attackers_to(Square s, Bitboard occ) const;
     bool in_check() const { return is_square_attacked(king_sq(stm_), ~stm_); }
     bool gives_check(Move m) const;  // after making the move
+    Bitboard checkers() const;
+    Bitboard pinned_pieces() const;
+    // Squares attacked by the opponent, ignoring our king (used for legal king moves).
+    Bitboard king_danger_squares() const;
+    // Static Exchange Evaluation: returns true if the move wins at least
+    // `threshold` centipawns of material after a full capture exchange on to_sq.
+    bool see_ge(Move m, int threshold = 0) const;
 
     // Move manipulation
     void do_move(Move m);

@@ -6,6 +6,8 @@ namespace BB {
 Bitboard PawnAttacks[2][64];
 Bitboard KnightAttacks[64];
 Bitboard KingAttacks[64];
+Bitboard BetweenBB[64][64];
+Bitboard LineBB[64][64];
 
 // Rays from each square in 8 directions. Used for classical sliding attacks.
 // Direction indices: 0=N, 1=NE, 2=E, 3=SE, 4=S, 5=SW, 6=W, 7=NW
@@ -72,6 +74,29 @@ void init() {
                 cur += DirDelta[d];
             }
             Rays[d][s] = ray;
+        }
+    }
+
+    // BetweenBB and LineBB. For each pair (a,b): if they share a rank, file, or
+    // diagonal, BetweenBB[a][b] is squares strictly between them, and LineBB[a][b]
+    // is the entire rank/file/diagonal containing them.
+    for (int a = 0; a < 64; ++a)
+        for (int b = 0; b < 64; ++b)
+            BetweenBB[a][b] = LineBB[a][b] = 0;
+
+    for (int s = 0; s < 64; ++s) {
+        for (int d = 0; d < 8; ++d) {
+            Bitboard ray = Rays[d][s];
+            while (ray) {
+                Square t = lsb(ray);
+                ray &= ray - 1;
+                // Squares strictly between s and t along direction d:
+                // intersection of Rays[d][s] (onwards from s) with complement of Rays[d][t].
+                BetweenBB[s][t] = Rays[d][s] & ~Rays[d][t] & ~(1ULL << t);
+                // Full line: union of rays in direction d from s, opposite from t, plus endpoints.
+                int opp = (d + 4) & 7;
+                LineBB[s][t] = Rays[d][s] | Rays[opp][s] | (1ULL << s);
+            }
         }
     }
 }

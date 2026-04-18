@@ -10,7 +10,8 @@ struct MoveList {
     void add(Move m) { moves[size++] = ExtMove{m, 0}; }
 };
 
-// Generates pseudo-legal moves. Callers must filter for legality with pos.is_legal().
+// Generates fully legal moves (pin- and check-aware). Callers can make/unmake
+// without an extra legality filter.
 enum GenType { GEN_ALL, GEN_CAPTURES };
 
 void generate_moves(const Position& pos, MoveList& list, GenType gt = GEN_ALL);

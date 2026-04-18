@@ -169,6 +169,122 @@ Bitboard Position::attackers_to(Square s, Bitboard occ) const {
     return a;
 }
 
+bool Position::see_ge(Move m, int threshold) const {
+    static const int see_val[7] = { 0, 100, 320, 330, 500, 900, 20000 };
+
+    // Non-normal moves: castling is always OK (>= 0), EP and promotions we
+    // approximate by treating as the normal-case capture / gaining a queen.
+    MoveType mt = type_of_move(m);
+    if (mt == MT_CASTLING) return threshold <= 0;
+
+    Square from = from_sq(m), to = to_sq(m);
+    PieceType attacker = type_of(board_[from]);
+    PieceType victim   = (mt == MT_EN_PASSANT) ? PAWN : type_of(board_[to]);
+    int promo_gain = 0;
+    if (mt == MT_PROMOTION) {
+        promo_gain = see_val[promo_type(m)] - see_val[PAWN];
+        attacker = promo_type(m);
+    }
+
+    int swap = see_val[victim] + promo_gain - threshold;
+    if (swap < 0) return false;
+
+    swap = see_val[attacker] - swap;
+    if (swap <= 0) return true;
+
+    Bitboard occ = pieces() ^ BB::sq_bb(from) ^ BB::sq_bb(to);
+    if (mt == MT_EN_PASSANT)
+        occ ^= BB::sq_bb(Square(int(to) + (color_of(board_[from]) == WHITE ? -8 : 8)));
+
+    Color stm = color_of(board_[from]);
+    Bitboard attackers = attackers_to(to, occ);
+    int res = 1;
+
+    while (true) {
+        stm = ~stm;
+        attackers &= occ;
+        Bitboard our_atk = attackers & pieces(stm);
+        if (!our_atk) break;
+
+        // Find least-valuable attacker.
+        int nextPt;
+        Bitboard lva = 0;
+        for (nextPt = PAWN; nextPt <= KING; ++nextPt) {
+            lva = our_atk & type_bb_[nextPt];
+            if (lva) break;
+        }
+
+        res ^= 1;
+
+        if (nextPt == KING) {
+            // If opponent still has an attacker, capturing with the king is illegal.
+            if (attackers & pieces(~stm)) res ^= 1;
+            break;
+        }
+
+        swap = see_val[nextPt] - swap;
+        if (swap < res) break;
+
+        // Remove this attacker from occ.
+        occ ^= lva & -lva;
+
+        // Add x-ray attackers uncovered by the removal.
+        if (nextPt == PAWN || nextPt == BISHOP || nextPt == QUEEN)
+            attackers |= BB::bishop_attacks(to, occ) & (type_bb_[BISHOP] | type_bb_[QUEEN]);
+        if (nextPt == ROOK || nextPt == QUEEN)
+            attackers |= BB::rook_attacks(to, occ) & (type_bb_[ROOK] | type_bb_[QUEEN]);
+    }
+    return res > 0;
+}
+
+Bitboard Position::checkers() const {
+    return attackers_to(king_sq(stm_), pieces()) & pieces(~stm_);
+}
+
+Bitboard Position::pinned_pieces() const {
+    Color us = stm_, them = ~us;
+    Square ksq = king_sq(us);
+    Bitboard occ      = pieces();
+    Bitboard our_occ  = pieces(us);
+    Bitboard enemy_rq = pieces(them, ROOK, QUEEN);
+    Bitboard enemy_bq = pieces(them, BISHOP, QUEEN);
+
+    // Sliders whose ray reaches the king if we removed intervening pieces.
+    Bitboard snipers = (BB::rook_attacks  (ksq, 0) & enemy_rq)
+                     | (BB::bishop_attacks(ksq, 0) & enemy_bq);
+    Bitboard pinned = 0;
+    while (snipers) {
+        Square sniper = BB::pop_lsb(snipers);
+        Bitboard between = BB::BetweenBB[ksq][sniper] & occ;
+        if (between && (between & (between - 1)) == 0) {  // exactly one blocker
+            if (between & our_occ) pinned |= between;
+        }
+    }
+    return pinned;
+}
+
+Bitboard Position::king_danger_squares() const {
+    Color us = stm_, them = ~us;
+    // Occupancy WITHOUT our king — a sliding check-giver still controls squares
+    // the king is trying to step to.
+    Bitboard occ = pieces() ^ BB::sq_bb(king_sq(us));
+    Bitboard danger = 0;
+
+    Bitboard pawns = pieces(them, PAWN);
+    while (pawns) {
+        Square s = BB::pop_lsb(pawns);
+        danger |= BB::PawnAttacks[them][s];
+    }
+    Bitboard knights = pieces(them, KNIGHT);
+    while (knights) danger |= BB::KnightAttacks[BB::pop_lsb(knights)];
+    Bitboard bq = pieces(them, BISHOP, QUEEN);
+    while (bq) danger |= BB::bishop_attacks(BB::pop_lsb(bq), occ);
+    Bitboard rq = pieces(them, ROOK, QUEEN);
+    while (rq) danger |= BB::rook_attacks(BB::pop_lsb(rq), occ);
+    danger |= BB::KingAttacks[king_sq(them)];
+    return danger;
+}
+
 bool Position::is_square_attacked(Square s, Color by) const {
     Bitboard occ = pieces();
     if (BB::PawnAttacks[~by][s] & pieces(by, PAWN)) return true;
