@@ -51,7 +51,7 @@ engine:
 abort_time: 20
 fake_think_time: false
 rate_limiting_delay: 0
-move_overhead: 2000
+move_overhead: 200
 quit_on_site_down: true
 
 correspondence:

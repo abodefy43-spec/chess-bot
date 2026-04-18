@@ -333,16 +333,67 @@ static void setup_time(Position& pos, const SearchLimits& lim) {
         g_hard_time_ms = lim.movetime;
         return;
     }
-    int time = (pos.side_to_move() == WHITE) ? lim.wtime : lim.btime;
-    int inc  = (pos.side_to_move() == WHITE) ? lim.winc  : lim.binc;
-    if (time <= 0 && inc <= 0) return;
-    int mtg = lim.movestogo > 0 ? lim.movestogo : 30;
-    int soft = time / mtg + inc * 3 / 4;
-    int hard = time / 5 + inc;
+    int my_time  = (pos.side_to_move() == WHITE) ? lim.wtime : lim.btime;
+    int opp_time = (pos.side_to_move() == WHITE) ? lim.btime : lim.wtime;
+    int inc      = (pos.side_to_move() == WHITE) ? lim.winc  : lim.binc;
+    if (my_time <= 0 && inc <= 0) return;
+
+    // Expected moves remaining. Fast games tend to be longer in plies; also
+    // we want to be extra conservative when we can't afford to flag.
+    int mtg = lim.movestogo > 0 ? lim.movestogo
+            : my_time < 15000  ? 50
+            : my_time < 60000  ? 45
+            : my_time < 180000 ? 40
+            :                    30;
+
+    // Reserve a cushion for the end of the game when the clock is low-ish.
+    int reserve = 0;
+    if (lim.movestogo == 0) {
+        if      (my_time < 30000)  reserve = my_time / 4;
+        else if (my_time < 120000) reserve = my_time / 6;
+        else if (my_time < 300000) reserve = my_time / 8;
+    }
+    int usable = std::max(0, my_time - reserve);
+
+    int soft = usable / mtg + inc * 3 / 4;
+    int hard = soft * 3;
+
+    // Absolute caps as fraction of remaining time.
+    int soft_cap = my_time / 6;   // never > 16.7% per move
+    int hard_cap = my_time / 4;   // never > 25% even in panic
+    if (soft > soft_cap) soft = soft_cap;
+    if (hard > hard_cap) hard = hard_cap;
+
+    // Match opponent's pace: if they're way ahead on time, speed up.
+    if (opp_time > 0 && my_time > 0) {
+        if (my_time * 3 < opp_time) {              // we have <33% of opp
+            soft = soft / 2;
+            hard = hard / 2;
+        } else if (my_time * 4 < opp_time * 5) {   // <80% of opp
+            soft = soft * 4 / 5;
+            hard = hard * 4 / 5;
+        } else if (my_time > opp_time * 2 && inc > 0) {
+            // We're way ahead — think a bit longer.
+            soft = soft * 5 / 4;
+        }
+    }
+
+    // Emergency clock.
+    if (my_time < 3000) {
+        soft = std::max(20, my_time / 60);
+        hard = std::max(50, my_time / 30);
+    } else if (my_time < 8000 && inc < 500) {
+        soft = std::max(60, my_time / 50);
+        hard = std::max(120, my_time / 25);
+    }
+
+    // Floors + safety margin (avoid flagging on UCI/network latency).
     if (soft < 10) soft = 10;
     if (hard < 10) hard = 10;
-    if (soft > time - 50) soft = std::max(10, time - 50);
-    if (hard > time - 50) hard = std::max(10, time - 50);
+    int safety = my_time > 1000 ? 100 : 30;
+    if (soft > my_time - safety) soft = std::max(10, my_time - safety);
+    if (hard > my_time - safety) hard = std::max(10, my_time - safety);
+
     g_soft_time_ms = soft;
     g_hard_time_ms = hard;
 }
