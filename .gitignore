@@ -1,0 +1,21 @@
+# Build artifacts
+ripper
+src/*.o
+
+# Secrets
+.env
+
+# Generated training data
+training_data.csv
+pgn_games/
+
+# lichess-bot tool is cloned locally at runtime; don't commit it
+lichess-bot/
+
+# macOS / editor junk
+.DS_Store
+.vscode/
+.idea/
+
+# Claude Code local settings
+.claude/
