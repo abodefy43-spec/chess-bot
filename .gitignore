@@ -8,6 +8,7 @@ src/*.o
 # Generated training data
 training_data.csv
 pgn_games/
+self_play/
 
 # lichess-bot tool is cloned locally at runtime; don't commit it
 lichess-bot/
