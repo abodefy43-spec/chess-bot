@@ -25,5 +25,7 @@ namespace Search {
     extern std::atomic<bool> stop_flag;
 
     void init();
+    void set_threads(int n);
+    int  threads();
     SearchResult go(Position& pos, const SearchLimits& limits);
 }

@@ -30,7 +30,7 @@ static void cmd_uci() {
     std::cout << "id name Ripper 0.1\n";
     std::cout << "id author you\n";
     std::cout << "option name Hash type spin default 16 min 1 max 4096\n";
-    std::cout << "option name Threads type spin default 1 min 1 max 1\n";
+    std::cout << "option name Threads type spin default 4 min 1 max 16\n";
     std::cout << "option name OwnBook type check default true\n";
     std::cout << "option name LogData type check default true\n";
     std::cout << "option name LogPath type string default /Users/qeuapp/Desktop/Chess/training_data.csv\n";
@@ -62,6 +62,8 @@ static void cmd_setoption(std::istringstream& iss) {
     if (name == "Hash") {
         int mb = std::stoi(value);
         TT.resize(mb);
+    } else if (name == "Threads") {
+        Search::set_threads(std::stoi(value));
     } else if (name == "OwnBook") {
         Book::set_enabled(value == "true" || value == "True");
     } else if (name == "LogData") {
@@ -202,6 +204,7 @@ int main() {
     Eval::init();
     Search::init();
     TT.resize(16);
+    Search::set_threads(4);
     g_pos.set_startpos();
     Book::init();
     GameLog::set_enabled(true);

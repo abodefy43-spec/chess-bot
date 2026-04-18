@@ -3,8 +3,11 @@
 #include "eval.h"
 #include "tt.h"
 #include <algorithm>
+#include <atomic>
 #include <cstdio>
 #include <cstring>
+#include <thread>
+#include <vector>
 
 namespace Search {
 
@@ -19,19 +22,20 @@ struct SearchStack {
     int  static_eval = VALUE_NONE;
 };
 
-// History heuristic table [color][from][to]
-static int history[2][64][64];
+// Per-thread state (each search thread has its own copies).
+thread_local int  history[2][64][64];
+thread_local Move pv_table[MAX_PLY][MAX_PLY];
+thread_local int  pv_len[MAX_PLY];
+thread_local U64  t_nodes;            // nodes counted by this thread
+thread_local int  t_thread_id = 0;
 
-// PV tracking
-static Move pv_table[MAX_PLY][MAX_PLY];
-static int  pv_len[MAX_PLY];
-
-// Node counter & time tracking
-static U64 g_nodes;
+// Shared search controls.
+static std::atomic<U64> g_total_nodes{0};
 static Clock::time_point g_start;
 static int  g_soft_time_ms;
 static int  g_hard_time_ms;
 static SearchLimits g_limits;
+static int  g_num_threads = 1;
 
 static inline int piece_value(PieceType pt) {
     static const int v[7] = { 0, 100, 320, 330, 500, 900, 20000 };
@@ -52,7 +56,7 @@ static inline bool check_time() {
         stop_flag.store(true, std::memory_order_relaxed);
         return true;
     }
-    if (g_limits.max_nodes && g_nodes >= g_limits.max_nodes) {
+    if (g_limits.max_nodes && g_total_nodes.load(std::memory_order_relaxed) >= g_limits.max_nodes) {
         stop_flag.store(true, std::memory_order_relaxed);
         return true;
     }
@@ -103,8 +107,11 @@ static Move pick_next_move(MoveList& list, int start) {
 }
 
 static int quiescence(Position& pos, int alpha, int beta, int ply) {
-    ++g_nodes;
-    if ((g_nodes & 2047) == 0) check_time();
+    ++t_nodes;
+    if ((t_nodes & 2047) == 0) {
+        g_total_nodes.fetch_add(2048, std::memory_order_relaxed);
+        check_time();
+    }
     if (stop_flag.load(std::memory_order_relaxed)) return 0;
     if (ply >= MAX_PLY - 1) return Eval::evaluate(pos);
 
@@ -153,8 +160,11 @@ static int negamax(Position& pos, int depth, int alpha, int beta, int ply,
 
     if (depth <= 0) return quiescence(pos, alpha, beta, ply);
 
-    ++g_nodes;
-    if ((g_nodes & 2047) == 0) check_time();
+    ++t_nodes;
+    if ((t_nodes & 2047) == 0) {
+        g_total_nodes.fetch_add(2048, std::memory_order_relaxed);
+        check_time();
+    }
     if (stop_flag.load(std::memory_order_relaxed)) return 0;
     if (ply >= MAX_PLY - 1) return Eval::evaluate(pos);
 
@@ -303,8 +313,17 @@ static int negamax(Position& pos, int depth, int alpha, int beta, int ply,
 }
 
 void init() {
+    // History is thread_local — only the calling thread's table is cleared here.
     std::memset(history, 0, sizeof(history));
 }
+
+void set_threads(int n) {
+    if (n < 1) n = 1;
+    if (n > 32) n = 32;
+    g_num_threads = n;
+}
+
+int threads() { return g_num_threads; }
 
 static void setup_time(Position& pos, const SearchLimits& lim) {
     g_soft_time_ms = 0;
@@ -328,15 +347,14 @@ static void setup_time(Position& pos, const SearchLimits& lim) {
     g_hard_time_ms = hard;
 }
 
-SearchResult go(Position& pos, const SearchLimits& limits) {
-    stop_flag.store(false);
-    g_nodes = 0;
-    g_start = Clock::now();
-    g_limits = limits;
-    setup_time(pos, limits);
-
+// One thread's iterative-deepening loop. thread_id 0 is the reporter
+// (prints UCI info, owns the returned result). Workers assist via the
+// shared TT so the main thread searches deeper per iteration (Lazy SMP).
+static void thread_loop(int thread_id, Position pos, SearchResult* out_result,
+                        int max_depth) {
+    t_thread_id = thread_id;
+    t_nodes = 0;
     std::memset(history, 0, sizeof(history));
-    TT.new_search();
 
     SearchStack stack[MAX_PLY + 4];
     for (auto& s : stack) {
@@ -345,15 +363,13 @@ SearchResult go(Position& pos, const SearchLimits& limits) {
         s.static_eval = VALUE_NONE;
     }
 
-    SearchResult res;
-
-    int max_depth = limits.depth > 0 ? limits.depth : MAX_PLY;
-    if (max_depth > MAX_PLY - 2) max_depth = MAX_PLY - 2;
-
     int last_score = 0;
+    bool is_main = (thread_id == 0);
 
-    for (int depth = 1; depth <= max_depth; ++depth) {
-        // Aspiration windows — small window around last_score, widen on fail
+    // Workers start one depth deeper on even ids to diverge search order.
+    int start_depth = 1 + ((thread_id > 0) ? (thread_id % 2) : 0);
+
+    for (int depth = start_depth; depth <= max_depth; ++depth) {
         int window = 25;
         int alpha = (depth >= 4) ? last_score - window : -VALUE_INF;
         int beta  = (depth >= 4) ? last_score + window :  VALUE_INF;
@@ -377,40 +393,70 @@ SearchResult go(Position& pos, const SearchLimits& limits) {
         if (stop_flag.load()) break;
 
         last_score = score;
-        res.best_move = pv_table[0][0];
-        if (pv_len[0] > 1) res.ponder_move = pv_table[0][1];
-        res.score = score;
-        res.depth_reached = depth;
-        res.nodes = g_nodes;
 
-        auto now = Clock::now();
-        int elapsed = (int)std::chrono::duration_cast<Ms>(now - g_start).count();
+        if (is_main) {
+            out_result->best_move = pv_table[0][0];
+            if (pv_len[0] > 1) out_result->ponder_move = pv_table[0][1];
+            out_result->score = score;
+            out_result->depth_reached = depth;
 
-        std::printf("info depth %d score ", depth);
-        if (std::abs(score) >= VALUE_MATE_IN_MAX_PLY) {
-            int mate_in = (score > 0 ? (VALUE_MATE - score + 1) / 2 : -(VALUE_MATE + score) / 2);
-            std::printf("mate %d", mate_in);
-        } else {
-            std::printf("cp %d", score);
-        }
-        std::printf(" nodes %llu time %d nps %llu pv",
-                    (unsigned long long)g_nodes, elapsed,
-                    (unsigned long long)(elapsed > 0 ? g_nodes * 1000 / elapsed : g_nodes));
-        for (int i = 0; i < pv_len[0]; ++i) {
-            std::printf(" %s", pos.move_to_uci(pv_table[0][i]).c_str());
-        }
-        std::printf("\n");
-        std::fflush(stdout);
+            auto now = Clock::now();
+            int elapsed = (int)std::chrono::duration_cast<Ms>(now - g_start).count();
+            U64 nodes_total = g_total_nodes.load(std::memory_order_relaxed) + t_nodes;
 
-        // Soft time stop between iterations
-        if (!limits.infinite && g_soft_time_ms > 0 && elapsed >= g_soft_time_ms) break;
-        if (std::abs(score) >= VALUE_MATE_IN_MAX_PLY && depth >= 4) {
-            // Found a forced mate — no need to keep searching.
-            int mate_plies = VALUE_MATE - std::abs(score);
-            if (depth >= mate_plies + 2) break;
+            std::printf("info depth %d score ", depth);
+            if (std::abs(score) >= VALUE_MATE_IN_MAX_PLY) {
+                int mate_in = (score > 0 ? (VALUE_MATE - score + 1) / 2 : -(VALUE_MATE + score) / 2);
+                std::printf("mate %d", mate_in);
+            } else {
+                std::printf("cp %d", score);
+            }
+            std::printf(" nodes %llu time %d nps %llu pv",
+                        (unsigned long long)nodes_total, elapsed,
+                        (unsigned long long)(elapsed > 0 ? nodes_total * 1000 / elapsed : nodes_total));
+            for (int i = 0; i < pv_len[0]; ++i) {
+                std::printf(" %s", pos.move_to_uci(pv_table[0][i]).c_str());
+            }
+            std::printf("\n");
+            std::fflush(stdout);
+
+            // Only the main thread signals stop based on time/mate conditions.
+            if (!g_limits.infinite && g_soft_time_ms > 0 && elapsed >= g_soft_time_ms) {
+                stop_flag.store(true);
+                break;
+            }
+            if (std::abs(score) >= VALUE_MATE_IN_MAX_PLY && depth >= 4) {
+                int mate_plies = VALUE_MATE - std::abs(score);
+                if (depth >= mate_plies + 2) { stop_flag.store(true); break; }
+            }
         }
     }
 
+    g_total_nodes.fetch_add(t_nodes, std::memory_order_relaxed);
+}
+
+SearchResult go(Position& pos, const SearchLimits& limits) {
+    stop_flag.store(false);
+    g_total_nodes.store(0);
+    g_start = Clock::now();
+    g_limits = limits;
+    setup_time(pos, limits);
+
+    TT.new_search();
+
+    SearchResult res;
+    int max_depth = limits.depth > 0 ? limits.depth : MAX_PLY;
+    if (max_depth > MAX_PLY - 2) max_depth = MAX_PLY - 2;
+
+    std::vector<std::thread> workers;
+    for (int i = 1; i < g_num_threads; ++i) {
+        workers.emplace_back(thread_loop, i, pos, &res, max_depth);
+    }
+    thread_loop(0, pos, &res, max_depth);
+    stop_flag.store(true);
+    for (auto& t : workers) t.join();
+
+    res.nodes = g_total_nodes.load(std::memory_order_relaxed);
     return res;
 }
 

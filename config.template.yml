@@ -41,7 +41,7 @@ engine:
 
   uci_options:
     Hash: 256
-    Threads: 1
+    Threads: 4
     OwnBook: true
 
   homemade_options:
@@ -61,7 +61,7 @@ correspondence:
   ponder: false
 
 challenge:
-  concurrency: 1
+  concurrency: 2
   sort_by: "best"
   preference: "none"
   accept_bot: true
