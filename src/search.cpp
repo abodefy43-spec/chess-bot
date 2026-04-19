@@ -363,6 +363,19 @@ static void setup_time(Position& pos, const SearchLimits& lim) {
     if (soft > soft_cap) soft = soft_cap;
     if (hard > hard_cap) hard = hard_cap;
 
+    // Per-tier upper bound on soft time: keeps short games snappy.
+    // (Stronger play comes from book + more moves, not from one long think.)
+    int soft_max =
+          my_time <  30000  ?  500   //  <30s left  -> 0.5s
+        : my_time <  90000  ? 1200   //  <90s        -> 1.2s
+        : my_time < 180000  ? 1800   //  <3min       -> 1.8s
+        : my_time < 360000  ? 2800   //  <6min       -> 2.8s
+        : my_time < 900000  ? 5000   //  <15min      -> 5s
+        :                        0;   // classical: no cap
+    if (soft_max > 0 && soft > soft_max) soft = soft_max;
+    int hard_max = soft_max > 0 ? soft_max * 3 : 0;
+    if (hard_max > 0 && hard > hard_max) hard = hard_max;
+
     // Match opponent's pace: if they're way ahead on time, speed up.
     if (opp_time > 0 && my_time > 0) {
         if (my_time * 3 < opp_time) {              // we have <33% of opp
