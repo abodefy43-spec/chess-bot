@@ -1,5 +1,5 @@
 CXX      ?= clang++
-CXXFLAGS ?= -std=c++20 -O3 -DNDEBUG -Wall -Wextra -Wno-unused-parameter -flto
+CXXFLAGS ?= -std=c++20 -O3 -DNDEBUG -Wall -Wextra -Wno-unused-parameter -Wno-unused-variable -flto
 LDFLAGS  ?= -flto
 
 SRC := $(wildcard src/*.cpp)

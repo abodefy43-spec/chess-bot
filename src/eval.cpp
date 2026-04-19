@@ -1,5 +1,6 @@
 #include "eval.h"
 #include "bitboard.h"
+#include "nnue.h"
 
 namespace Eval {
 
@@ -147,7 +148,17 @@ static const int* eg_table[7] = {
 
 void init() {}
 
+int evaluate_classical(const Position& pos);
+
 int evaluate(const Position& pos) {
+    if (NNUE::is_loaded()) {
+        int cp = NNUE::evaluate(pos);
+        if (cp != INT32_MIN) return cp;
+    }
+    return evaluate_classical(pos);
+}
+
+int evaluate_classical(const Position& pos) {
     int mg[2] = {0, 0};
     int eg[2] = {0, 0};
     int phase = 0;

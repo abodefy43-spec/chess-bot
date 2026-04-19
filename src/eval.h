@@ -3,5 +3,6 @@
 
 namespace Eval {
     void init();
-    int evaluate(const Position& pos);  // Returns score from side-to-move's perspective.
+    int evaluate(const Position& pos);            // NNUE if loaded, else classical.
+    int evaluate_classical(const Position& pos);  // PeSTO tapered eval.
 }

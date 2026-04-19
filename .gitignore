@@ -9,6 +9,9 @@ src/*.o
 training_data.csv
 pgn_games/
 self_play/
+training/checkpoint.pt
+training/nnue.bin
+training/__pycache__/
 
 # lichess-bot tool is cloned locally at runtime; don't commit it
 lichess-bot/

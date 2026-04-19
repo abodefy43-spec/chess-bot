@@ -7,6 +7,7 @@
 #include "search.h"
 #include "book.h"
 #include "gamelog.h"
+#include "nnue.h"
 #include <chrono>
 
 #include <atomic>
@@ -34,6 +35,8 @@ static void cmd_uci() {
     std::cout << "option name OwnBook type check default true\n";
     std::cout << "option name LogData type check default true\n";
     std::cout << "option name LogPath type string default /Users/qeuapp/Desktop/Chess/training_data.csv\n";
+    std::cout << "option name NNUEPath type string default /Users/qeuapp/Desktop/Chess/training/nnue.bin\n";
+    std::cout << "option name UseNNUE type check default false\n";
     std::cout << "uciok" << std::endl;
 }
 
@@ -70,6 +73,14 @@ static void cmd_setoption(std::istringstream& iss) {
         GameLog::set_enabled(value == "true" || value == "True");
     } else if (name == "LogPath") {
         GameLog::set_path(value);
+    } else if (name == "NNUEPath") {
+        NNUE::load(value);
+    } else if (name == "UseNNUE") {
+        if (value == "true" || value == "True") {
+            // Load default path if not already loaded.
+            if (!NNUE::is_loaded())
+                NNUE::load("/Users/qeuapp/Desktop/Chess/training/nnue.bin");
+        }
     }
 }
 
@@ -148,9 +159,24 @@ static void cmd_go(std::istringstream& iss) {
         int ms = (int)std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count();
         GameLog::record(g_pos, res.best_move, res.score, res.depth_reached,
                         res.nodes, ms, "search");
+
+        // Validate the ponder move is legal after playing bestmove, otherwise drop it.
+        Move pm = res.ponder_move;
+        if (pm != MOVE_NONE && res.best_move != MOVE_NONE) {
+            g_pos.do_move(res.best_move);
+            MoveList list;
+            generate_moves(g_pos, list);
+            bool found = false;
+            for (int i = 0; i < list.size; ++i) {
+                if (list.moves[i].move == pm) { found = true; break; }
+            }
+            g_pos.undo_move(res.best_move);
+            if (!found) pm = MOVE_NONE;
+        }
+
         std::cout << "bestmove " << g_pos.move_to_uci(res.best_move);
-        if (res.ponder_move != MOVE_NONE)
-            std::cout << " ponder " << g_pos.move_to_uci(res.ponder_move);
+        if (pm != MOVE_NONE)
+            std::cout << " ponder " << g_pos.move_to_uci(pm);
         std::cout << std::endl;
     });
 }

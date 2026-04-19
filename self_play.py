@@ -33,13 +33,13 @@ games_completed = 0
 plies_total = 0
 
 
-def open_engine(engine_path: str, hash_mb: int) -> chess.engine.SimpleEngine:
+def open_engine(engine_path: str, hash_mb: int, threads: int) -> chess.engine.SimpleEngine:
     e = chess.engine.SimpleEngine.popen_uci(engine_path)
     # Suppress per-game CSV logging from the engine; this script handles data.
     try:
-        e.configure({"Hash": hash_mb, "LogData": False, "OwnBook": True})
+        e.configure({"Hash": hash_mb, "Threads": threads,
+                     "LogData": False, "OwnBook": True})
     except chess.engine.EngineError:
-        # Fallback for options the engine may not expose.
         pass
     return e
 
@@ -56,11 +56,12 @@ def score_to_cp(score, turn_is_white: bool) -> int | None:
     return pov.score()
 
 
-def play_one_game(engine_path: str, movetime_ms: int, game_id: int, output_dir: str, hash_mb: int):
+def play_one_game(engine_path: str, movetime_ms: int, game_id: int,
+                  output_dir: str, hash_mb: int, threads: int):
     global games_completed, plies_total
 
-    white = open_engine(engine_path, hash_mb)
-    black = open_engine(engine_path, hash_mb)
+    white = open_engine(engine_path, hash_mb, threads)
+    black = open_engine(engine_path, hash_mb, threads)
 
     try:
         board = chess.Board()
@@ -158,6 +159,7 @@ def main():
     ap.add_argument("--workers", type=int, default=4)
     ap.add_argument("--movetime", type=int, default=300, help="ms per move")
     ap.add_argument("--hash", type=int, default=64, help="hash MB per engine")
+    ap.add_argument("--threads", type=int, default=1, help="threads per engine")
     args = ap.parse_args()
 
     if not os.access(args.engine, os.X_OK):
@@ -186,7 +188,7 @@ def main():
         with concurrent.futures.ThreadPoolExecutor(max_workers=args.workers) as ex:
             futures = [
                 ex.submit(play_one_game, args.engine, args.movetime, i,
-                          args.output, args.hash)
+                          args.output, args.hash, args.threads)
                 for i in range(args.games)
             ]
             for f in concurrent.futures.as_completed(futures):
