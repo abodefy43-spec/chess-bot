@@ -43,6 +43,7 @@ engine:
     Hash: 256
     Threads: 4
     OwnBook: true
+    UseNNUE: false
 
   homemade_options:
 

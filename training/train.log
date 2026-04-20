@@ -1,0 +1,29 @@
+/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/site-packages/torch/utils/data/dataloader.py:1118: UserWarning: 'pin_memory' argument is set as true but not supported on MPS now, device pinned memory won't be used.
+  super().__init__(loader)
+device: mps
+dataset: 363062 raw lines in self_play/positions.jsonl
+  epoch 0 step 50: loss=0.2641
+epoch 0 done: avg_loss=0.2589  positions_seen=363062  time=16.3s
+wrote training/nnue.bin (401.7 KB)
+  epoch 1 step 50: loss=0.1909
+epoch 1 done: avg_loss=0.1737  positions_seen=363062  time=14.7s
+wrote training/nnue.bin (401.7 KB)
+  epoch 2 step 50: loss=0.1397
+epoch 2 done: avg_loss=0.1314  positions_seen=363062  time=14.6s
+wrote training/nnue.bin (401.7 KB)
+  epoch 3 step 50: loss=0.1157
+epoch 3 done: avg_loss=0.1092  positions_seen=363062  time=14.6s
+wrote training/nnue.bin (401.7 KB)
+  epoch 4 step 50: loss=0.1002
+epoch 4 done: avg_loss=0.0955  positions_seen=363062  time=14.7s
+wrote training/nnue.bin (401.7 KB)
+  epoch 5 step 50: loss=0.0912
+epoch 5 done: avg_loss=0.0874  positions_seen=363062  time=14.8s
+wrote training/nnue.bin (401.7 KB)
+  epoch 6 step 50: loss=0.0837
+epoch 6 done: avg_loss=0.0799  positions_seen=363062  time=14.7s
+wrote training/nnue.bin (401.7 KB)
+  epoch 7 step 50: loss=0.0795
+epoch 7 done: avg_loss=0.0765  positions_seen=363062  time=14.7s
+wrote training/nnue.bin (401.7 KB)
+done.
